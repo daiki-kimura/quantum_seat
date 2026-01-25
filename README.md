@@ -133,6 +133,29 @@ python app.py
 
 ## 🐛 トラブルシューティング
 
+詳細なトラブルシューティングガイドは [TROUBLESHOOTING.md](TROUBLESHOOTING.md) を参照してください。
+
+### よくある問題
+
+#### ポート5000が使用中
+
+アプリケーションはデフォルトでポート5001を使用します：
+
+```bash
+python app.py
+# ブラウザで http://localhost:5001 にアクセス
+```
+
+macOSでポート5000がAirPlayで使用されている場合は、システム設定でAirPlay Receiverを無効化するか、別のポートを使用してください。
+
+#### urllib3のOpenSSL警告
+
+この警告は機能に影響しません。解決するには：
+
+```bash
+pip install 'urllib3<2.0.0'
+```
+
 ### IBM Quantumに接続できない
 
 **症状**: 「トークン未設定」と表示される
