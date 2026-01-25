@@ -23,15 +23,48 @@ def get_quantum_generator():
     global quantum_generator
     if quantum_generator is None:
         token = app.config.get('IBM_QUANTUM_TOKEN')
-        quantum_generator = QuantumRandomGenerator(token=token)
+        instance = app.config.get('IBM_QUANTUM_INSTANCE')
+        quantum_generator = QuantumRandomGenerator(
+            token=token, instance=instance)
     return quantum_generator
+
+
+def load_participants_from_file(filename='participants.txt'):
+    """
+    テキストファイルから参加者リストを読み込む
+
+    Args:
+        filename: 参加者リストファイル名
+
+    Returns:
+        参加者名のリスト
+    """
+    participants = []
+    try:
+        with open(filename, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                # 空行とコメント行をスキップ
+                if line and not line.startswith('#'):
+                    participants.append(line)
+        app.logger.info(f"participants.txtから{len(participants)}名を読み込みました")
+    except FileNotFoundError:
+        app.logger.warning(f"{filename}が見つかりません。デフォルト値を使用します")
+    except Exception as e:
+        app.logger.error(f"参加者ファイルの読み込みエラー: {e}")
+
+    return participants
 
 
 @app.route('/')
 def index():
     """メイン画面"""
+    # participants.txtから参加者を読み込む
+    participants = load_participants_from_file()
+
     return render_template('index.html',
-                           default_participants=app.config['DEFAULT_PARTICIPANTS'])
+                           default_participants=app.config['DEFAULT_PARTICIPANTS'],
+                           participants=participants)
 
 
 @app.route('/api/generate-random', methods=['POST'])

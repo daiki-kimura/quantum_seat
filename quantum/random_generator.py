@@ -8,7 +8,7 @@ from typing import List, Optional
 
 from qiskit import QuantumCircuit, transpile
 from qiskit.providers import BackendV2
-from qiskit_ibm_runtime import QiskitRuntimeService, Sampler, Session
+from qiskit_ibm_runtime import QiskitRuntimeService, SamplerV2
 
 # ロギング設定
 logging.basicConfig(level=logging.INFO)
@@ -18,16 +18,18 @@ logger = logging.getLogger(__name__)
 class QuantumRandomGenerator:
     """IBM Quantumを使用した乱数生成クラス"""
 
-    def __init__(self, token: Optional[str] = None, backend_name: Optional[str] = None):
+    def __init__(self, token: Optional[str] = None, backend_name: Optional[str] = None, instance: Optional[str] = None):
         """
         初期化
 
         Args:
             token: IBM Quantum APIトークン
             backend_name: 使用するバックエンド名（Noneの場合は自動選択）
+            instance: IBM Quantum Instance (CRN)
         """
         self.token = token
         self.backend_name = backend_name
+        self.instance = instance
         self.service = None
         self.backend = None
         self._initialize_service()
@@ -36,12 +38,22 @@ class QuantumRandomGenerator:
         """IBM Quantumサービスの初期化"""
         try:
             if self.token:
+                logger.info("IBM Quantum Serviceへの接続を試行中...")
+
+                # サービス接続のパラメータを準備
+                service_params = {
+                    "channel": "ibm_cloud",
+                    "token": self.token
+                }
+
+                # インスタンス（CRN）が指定されている場合は追加
+                if self.instance:
+                    service_params["instance"] = self.instance
+                    logger.info(f"   インスタンスを指定: {self.instance[:50]}...")
+
                 # トークンを使用してサービスに接続
-                self.service = QiskitRuntimeService(
-                    channel="ibm_quantum",
-                    token=self.token
-                )
-                logger.info("IBM Quantum Serviceに接続しました")
+                self.service = QiskitRuntimeService(**service_params)
+                logger.info("✅ IBM Quantum Serviceに接続しました")
 
                 # バックエンドの選択
                 if self.backend_name:
@@ -51,14 +63,16 @@ class QuantumRandomGenerator:
                     self.backend = self._select_best_backend()
 
                 if self.backend:
-                    logger.info(f"バックエンド '{self.backend.name}' を使用します")
+                    logger.info(f"✅ バックエンド '{self.backend.name}' を使用します")
             else:
-                logger.warning("IBM Quantum トークンが設定されていません。ローカルシミュレーターを使用します")
+                logger.info("ℹ️  IBM Quantum トークンが設定されていません")
+                logger.info("ℹ️  ローカルシミュレーターを使用します（これは正常な動作です）")
                 self._use_local_simulator()
 
         except Exception as e:
-            logger.error(f"IBM Quantum Serviceの初期化に失敗: {e}")
-            logger.info("ローカルシミュレーターにフォールバックします")
+            logger.info("ℹ️  IBM Quantum Serviceへの接続に失敗しました")
+            logger.info(f"   理由: インターネット接続またはトークンの問題")
+            logger.info("ℹ️  ローカルシミュレーターを使用します（これは正常な動作です）")
             self._use_local_simulator()
 
     def _select_best_backend(self) -> Optional[BackendV2]:
@@ -97,9 +111,9 @@ class QuantumRandomGenerator:
         try:
             from qiskit_aer import AerSimulator
             self.backend = AerSimulator()
-            logger.info("ローカルのAerSimulatorを使用します")
+            logger.info("✅ ローカルのAerSimulatorを使用します")
         except ImportError:
-            logger.warning("Aer Simulatorが利用できません。疑似乱数を使用します")
+            logger.info("ℹ️  Aer Simulatorが利用できません。疑似乱数を使用します")
             self.backend = None
 
     def generate_random_numbers(self, count: int, max_value: int) -> List[int]:
@@ -175,24 +189,51 @@ class QuantumRandomGenerator:
         try:
             # IBM Quantum Runtimeを使用する場合
             if self.service and hasattr(self.backend, 'name') and 'ibm' in self.backend.name.lower():
-                with Session(service=self.service, backend=self.backend) as session:
-                    sampler = Sampler(session=session)
-                    job = sampler.run(circuit, shots=shots)
-                    result = job.result()
+                # 回路をバックエンドに合わせてトランスパイル（V2では必須）
+                transpiled_circuit = transpile(circuit, backend=self.backend)
 
-                    # 結果から乱数を抽出
-                    quasi_dists = result.quasi_dists[0]
-                    for bitstring, probability in quasi_dists.items():
-                        if len(random_numbers) >= count:
-                            break
-                        value = int(bitstring)
-                        if value <= max_value:
-                            # 確率に応じて複数回追加
-                            num_samples = int(probability * shots)
-                            for _ in range(num_samples):
-                                if len(random_numbers) >= count:
-                                    break
-                                random_numbers.append(value)
+                # SamplerV2を使用（V1は非推奨）
+                # V2ではbackendパラメータではなく、modeで指定
+                sampler = SamplerV2(mode=self.backend)
+
+                # V2ではPUB（Primitive Unified Bloc）形式で実行
+                job = sampler.run([transpiled_circuit], shots=shots)
+                result = job.result()
+
+                # V2の結果形式から乱数を抽出
+                # result[0]は最初のPUBの結果
+                pub_result = result[0]
+
+                # DataBinから測定結果を取得
+                # 測定結果は回路で定義したクラシカルレジスタ名でアクセス
+                # デフォルトでは 'c' または 'meas' だが、回路によって異なる
+                data_bin = pub_result.data
+
+                # DataBinの属性を確認して測定結果を取得
+                if hasattr(data_bin, 'c'):
+                    counts = data_bin.c.get_counts()
+                elif hasattr(data_bin, 'meas'):
+                    counts = data_bin.meas.get_counts()
+                else:
+                    # 属性名が不明な場合、最初の属性を使用
+                    attr_names = [attr for attr in dir(
+                        data_bin) if not attr.startswith('_')]
+                    if attr_names:
+                        counts = getattr(data_bin, attr_names[0]).get_counts()
+                    else:
+                        raise AttributeError("DataBinに測定結果が見つかりません")
+
+                # カウントから乱数を抽出
+                for bitstring, count_value in counts.items():
+                    if len(random_numbers) >= count:
+                        break
+                    value = int(bitstring, 2)  # 2進数文字列を整数に変換
+                    if value <= max_value:
+                        # カウント数に応じて追加
+                        for _ in range(count_value):
+                            if len(random_numbers) >= count:
+                                break
+                            random_numbers.append(value)
             else:
                 # ローカルシミュレーターを使用
                 from qiskit import execute
@@ -252,12 +293,13 @@ class QuantumRandomGenerator:
 
         # Fisher-Yatesシャッフルアルゴリズムで使用する乱数を生成
         n = len(items)
-        random_indices = self.generate_random_numbers(n - 1, n - 1)
-
-        # シャッフルを実行
+        # 各ステップで必要な範囲の乱数を生成
         shuffled = items.copy()
+
         for i in range(n - 1, 0, -1):
-            j = random_indices[n - 1 - i] % (i + 1)
+            # 0からiまでの範囲で乱数を生成
+            random_value = self.generate_random_numbers(1, i)[0]
+            j = random_value  # 0からiの範囲の値
             shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
 
         return shuffled

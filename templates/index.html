@@ -118,6 +118,9 @@
 
     <script src="{{ url_for('static', filename='js/seat_layout.js') }}"></script>
     <script>
+        // participants.txtから読み込んだ参加者リスト
+        const preloadedParticipants = {{ participants| tojson | safe }};
+
         // ページ読み込み時の初期化
         document.addEventListener('DOMContentLoaded', function () {
             // バックエンド情報を取得
@@ -168,9 +171,15 @@
             for (let i = 1; i <= count; i++) {
                 const inputDiv = document.createElement('div');
                 inputDiv.className = 'participant-input';
+
+                // participants.txtから読み込んだ名前があれば使用
+                const defaultName = (preloadedParticipants && preloadedParticipants[i - 1])
+                    ? preloadedParticipants[i - 1]
+                    : `参加者${i}`;
+
                 inputDiv.innerHTML = `
                     <label>${i}.</label>
-                    <input type="text" id="participant-${i}" placeholder="参加者${i}の名前" value="参加者${i}">
+                    <input type="text" id="participant-${i}" placeholder="参加者${i}の名前" value="${defaultName}">
                 `;
                 container.appendChild(inputDiv);
             }
