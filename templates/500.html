@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>500 - サーバーエラー</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .error-container {
+            text-align: center;
+            padding: 100px 20px;
+        }
+
+        .error-code {
+            font-size: 120px;
+            font-weight: bold;
+            color: #dc3545;
+            margin: 0;
+        }
+
+        .error-message {
+            font-size: 24px;
+            color: #666;
+            margin: 20px 0;
+        }
+
+        .error-description {
+            font-size: 16px;
+            color: #999;
+            margin-bottom: 40px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="error-container">
+            <h1 class="error-code">500</h1>
+            <p class="error-message">サーバーエラーが発生しました</p>
+            <p class="error-description">申し訳ございません。サーバーで問題が発生しました。<br>しばらくしてから再度お試しください。</p>
+            <a href="/" class="btn btn-primary">ホームに戻る</a>
+        </div>
+    </div>
+</body>
+
+</html>

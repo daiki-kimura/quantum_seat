@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quantum Seat - 量子乱数で席替え</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>🎲 Quantum Seat</h1>
+            <p class="subtitle">IBM Quantumで生成した真の乱数を使った席替えアプリ</p>
+            <div id="backend-info" class="backend-info">
+                <span id="backend-status">バックエンド情報を取得中...</span>
+            </div>
+        </header>
+
+        <main>
+            <!-- ステップ1: 参加者入力 -->
+            <section class="step-section" id="step1">
+                <h2>ステップ1: 参加者を入力</h2>
+                <div class="participants-input">
+                    <div class="input-group">
+                        <label for="participant-count">参加者数:</label>
+                        <input type="number" id="participant-count" value="{{ default_participants }}" min="1"
+                            max="100">
+                        <button onclick="generateParticipantInputs()" class="btn btn-secondary">入力欄を生成</button>
+                    </div>
+
+                    <div id="participants-list" class="participants-list">
+                        <!-- 参加者入力欄が動的に生成される -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- ステップ2: 座席配置 -->
+            <section class="step-section" id="step2">
+                <h2>ステップ2: 座席を配置</h2>
+                <div class="seat-controls">
+                    <button onclick="addSeat()" class="btn btn-secondary">座席を追加</button>
+                    <button onclick="clearSeats()" class="btn btn-danger">すべてクリア</button>
+                    <button onclick="loadPreset('table')" class="btn btn-secondary">テーブル配置</button>
+                    <button onclick="loadPreset('circle')" class="btn btn-secondary">円形配置</button>
+                    <div class="seat-count">
+                        座席数: <span id="seat-count">0</span>
+                    </div>
+                </div>
+
+                <div class="canvas-container">
+                    <canvas id="seat-canvas" width="800" height="600"></canvas>
+                </div>
+
+                <div class="canvas-instructions">
+                    <p>💡 座席をドラッグして配置を変更できます</p>
+                    <p>💡 座席をダブルクリックで削除できます</p>
+                </div>
+            </section>
+
+            <!-- ステップ3: 席替え実行 -->
+            <section class="step-section" id="step3">
+                <h2>ステップ3: 席替えを実行</h2>
+                <div class="shuffle-controls">
+                    <button onclick="shuffleSeats()" class="btn btn-primary btn-large">
+                        🎲 量子乱数で席替え実行
+                    </button>
+                </div>
+
+                <div id="loading" class="loading" style="display: none;">
+                    <div class="spinner"></div>
+                    <p>量子回路を実行中...</p>
+                </div>
+            </section>
+
+            <!-- 結果表示 -->
+            <section class="step-section" id="result-section" style="display: none;">
+                <h2>✨ 席替え結果</h2>
+                <div id="result-info" class="result-info">
+                    <!-- 結果情報が表示される -->
+                </div>
+
+                <div class="result-display">
+                    <div class="result-visual">
+                        <h3>座席配置図</h3>
+                        <canvas id="result-canvas" width="800" height="600"></canvas>
+                    </div>
+
+                    <div class="result-table">
+                        <h3>割り当て一覧</h3>
+                        <table id="assignment-table">
+                            <thead>
+                                <tr>
+                                    <th>座席番号</th>
+                                    <th>参加者名</th>
+                                </tr>
+                            </thead>
+                            <tbody id="assignment-tbody">
+                                <!-- 割り当て結果が表示される -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="result-actions">
+                    <button onclick="exportResult()" class="btn btn-secondary">結果をエクスポート</button>
+                    <button onclick="resetApp()" class="btn btn-secondary">最初からやり直す</button>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>Powered by IBM Quantum & Qiskit</p>
+            <p class="footer-note">このアプリケーションは教育・エンターテイメント目的で作成されています</p>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/seat_layout.js') }}"></script>
+    <script>
+        // ページ読み込み時の初期化
+        document.addEventListener('DOMContentLoaded', function () {
+            // バックエンド情報を取得
+            fetchBackendInfo();
+
+            // デフォルトの参加者入力欄を生成
+            generateParticipantInputs();
+
+            // キャンバスを初期化
+            initCanvas();
+        });
+
+        // バックエンド情報を取得
+        async function fetchBackendInfo() {
+            try {
+                const response = await fetch('/api/backend-info');
+                const data = await response.json();
+
+                if (data.success) {
+                    const statusElement = document.getElementById('backend-status');
+                    const backendName = data.backend_name || 'None';
+                    const isQuantum = data.is_quantum;
+                    const tokenConfigured = data.token_configured;
+
+                    let statusHTML = '';
+                    if (isQuantum && tokenConfigured) {
+                        statusHTML = `✅ 量子バックエンド: <strong>${backendName}</strong>`;
+                    } else if (tokenConfigured) {
+                        statusHTML = `⚠️ シミュレーター: <strong>${backendName}</strong>`;
+                    } else {
+                        statusHTML = `⚠️ トークン未設定 - 疑似乱数を使用`;
+                    }
+
+                    statusElement.innerHTML = statusHTML;
+                }
+            } catch (error) {
+                console.error('バックエンド情報の取得に失敗:', error);
+            }
+        }
+
+        // 参加者入力欄を生成
+        function generateParticipantInputs() {
+            const count = parseInt(document.getElementById('participant-count').value);
+            const container = document.getElementById('participants-list');
+
+            container.innerHTML = '';
+
+            for (let i = 1; i <= count; i++) {
+                const inputDiv = document.createElement('div');
+                inputDiv.className = 'participant-input';
+                inputDiv.innerHTML = `
+                    <label>${i}.</label>
+                    <input type="text" id="participant-${i}" placeholder="参加者${i}の名前" value="参加者${i}">
+                `;
+                container.appendChild(inputDiv);
+            }
+        }
+
+        // 席替えを実行
+        async function shuffleSeats() {
+            // 参加者を取得
+            const count = parseInt(document.getElementById('participant-count').value);
+            const participants = [];
+
+            for (let i = 1; i <= count; i++) {
+                const name = document.getElementById(`participant-${i}`).value.trim();
+                if (name) {
+                    participants.push(name);
+                }
+            }
+
+            if (participants.length === 0) {
+                alert('参加者を入力してください');
+                return;
+            }
+
+            // 座席を取得
+            const seats = getSeats();
+
+            if (seats.length === 0) {
+                alert('座席を配置してください');
+                return;
+            }
+
+            if (participants.length > seats.length) {
+                alert(`座席数（${seats.length}）が参加者数（${participants.length}）より少ないです`);
+                return;
+            }
+
+            // ローディング表示
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('result-section').style.display = 'none';
+
+            try {
+                const response = await fetch('/api/shuffle-seats', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        participants: participants,
+                        seats: seats
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    displayResult(data);
+                } else {
+                    alert('エラー: ' + data.error);
+                }
+            } catch (error) {
+                console.error('席替えエラー:', error);
+                alert('席替えの実行に失敗しました');
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        // 結果を表示
+        function displayResult(data) {
+            const resultSection = document.getElementById('result-section');
+            const resultInfo = document.getElementById('result-info');
+            const tbody = document.getElementById('assignment-tbody');
+
+            // 結果情報を表示
+            const method = data.method === 'quantum' ? '量子乱数' : '疑似乱数';
+            const backend = data.backend || 'None';
+            const timestamp = new Date(data.timestamp).toLocaleString('ja-JP');
+
+            resultInfo.innerHTML = `
+                <div class="info-item">
+                    <strong>生成方法:</strong> ${method}
+                </div>
+                <div class="info-item">
+                    <strong>バックエンド:</strong> ${backend}
+                </div>
+                <div class="info-item">
+                    <strong>実行時刻:</strong> ${timestamp}
+                </div>
+            `;
+
+            // テーブルに割り当てを表示
+            tbody.innerHTML = '';
+            data.assignments.forEach((assignment, index) => {
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td>${assignment.seat.label || (index + 1)}</td>
+                    <td>${assignment.participant}</td>
+                `;
+            });
+
+            // 座席配置図を描画
+            drawResultCanvas(data.assignments);
+
+            // 結果セクションを表示
+            resultSection.style.display = 'block';
+            resultSection.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // 結果をエクスポート
+        function exportResult() {
+            const table = document.getElementById('assignment-table');
+            let csv = '座席番号,参加者名\n';
+
+            const rows = table.querySelectorAll('tbody tr');
+            rows.forEach(row => {
+                const cells = row.querySelectorAll('td');
+                csv += `${cells[0].textContent},${cells[1].textContent}\n`;
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `seat_assignment_${new Date().getTime()}.csv`;
+            link.click();
+        }
+
+        // アプリをリセット
+        function resetApp() {
+            if (confirm('最初からやり直しますか？')) {
+                location.reload();
+            }
+        }
+    </script>
+</body>
+
+</html>
