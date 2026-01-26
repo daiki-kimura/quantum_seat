@@ -1,6 +1,9 @@
 # Environment Variables
 .env
 
+# Participants Data
+participants.txt
+
 # Python
 __pycache__/
 *.py[cod]

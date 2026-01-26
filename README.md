@@ -76,9 +76,14 @@ python app.py
 
 **方法2: ファイルから読み込み**
 
-1. プロジェクトルートに`participants.txt`を作成
-2. 1行に1名ずつ参加者名を記入
+1. `participants.txt.example`を`participants.txt`にコピー
+   ```bash
+   cp participants.txt.example participants.txt
+   ```
+2. `participants.txt`を編集して、1行に1名ずつ参加者名を記入
 3. アプリケーション起動時に自動的に読み込まれます
+
+**注意**: `participants.txt`は個人情報を含む可能性があるため、`.gitignore`に追加されており、Gitリポジトリにはアップロードされません。
 
 ### ステップ2: 座席を配置
 
