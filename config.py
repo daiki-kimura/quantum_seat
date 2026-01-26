@@ -35,7 +35,7 @@ class Config:
     MAX_QUBITS = 10  # 使用する最大量子ビット数
 
     # アプリケーション設定
-    DEFAULT_PARTICIPANTS = 18  # デフォルトの参加者数
+    DEFAULT_PARTICIPANTS = 19  # デフォルトの参加者数
     MAX_PARTICIPANTS = 100  # 最大参加者数
 
     # セッション設定
