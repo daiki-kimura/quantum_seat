@@ -10,8 +10,12 @@ from qiskit import QuantumCircuit, transpile
 from qiskit.providers import BackendV2
 from qiskit_ibm_runtime import QiskitRuntimeService, SamplerV2
 
-# ロギング設定
-logging.basicConfig(level=logging.INFO)
+# ロギング設定（秒を含む時刻フォーマット）
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 logger = logging.getLogger(__name__)
 
 
@@ -291,17 +295,23 @@ class QuantumRandomGenerator:
         if not items:
             return items
 
-        # Fisher-Yatesシャッフルアルゴリズムで使用する乱数を生成
         n = len(items)
-        # 各ステップで必要な範囲の乱数を生成
+        if n <= 1:
+            return items.copy()
+
+        logger.info(f"シャッフル開始: {n}個のアイテム")
+
+        # Fisher-Yatesシャッフルアルゴリズム
+        # 各ステップで正確な範囲の量子乱数を生成
         shuffled = items.copy()
 
         for i in range(n - 1, 0, -1):
-            # 0からiまでの範囲で乱数を生成
-            random_value = self.generate_random_numbers(1, i)[0]
-            j = random_value  # 0からiの範囲の値
+            # 0からiまでの範囲で量子乱数を1つ生成
+            j = self.generate_random_numbers(1, i)[0]
+            logger.debug(f"ステップ {n-1-i}: 位置{i}と位置{j}を交換（範囲[0-{i}]の乱数={j}）")
             shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
 
+        logger.info(f"シャッフル完了")
         return shuffled
 
 # Made with Bob

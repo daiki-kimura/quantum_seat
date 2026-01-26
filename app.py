@@ -2,6 +2,7 @@
 Quantum Seat - IBM Quantumを使用した席替えアプリケーション
 """
 import json
+import logging
 import os
 from datetime import datetime
 
@@ -9,6 +10,13 @@ from flask import Flask, jsonify, render_template, request, session
 
 from config import Config
 from quantum import QuantumRandomGenerator
+
+# ロギング設定（秒を含む時刻フォーマット）
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
 # Flaskアプリケーションの初期化
 app = Flask(__name__)
@@ -24,8 +32,11 @@ def get_quantum_generator():
     if quantum_generator is None:
         token = app.config.get('IBM_QUANTUM_TOKEN')
         instance = app.config.get('IBM_QUANTUM_INSTANCE')
+        backend_name = app.config.get('IBM_QUANTUM_BACKEND') or None
         quantum_generator = QuantumRandomGenerator(
-            token=token, instance=instance)
+            token=token,
+            backend_name=backend_name,
+            instance=instance)
     return quantum_generator
 
 

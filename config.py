@@ -19,6 +19,8 @@ class Config:
     # IBM Quantum設定
     IBM_QUANTUM_TOKEN = os.getenv('IBM_QUANTUM_TOKEN', '')
     IBM_QUANTUM_INSTANCE = os.getenv('IBM_QUANTUM_INSTANCE', '')  # CRN
+    IBM_QUANTUM_BACKEND = os.getenv(
+        'IBM_QUANTUM_BACKEND', '')  # 使用するバックエンド名（空の場合は自動選択）
 
     # 量子シミュレーター設定
     # 優先順位: ibm_qasm_simulator > aer_simulator > local simulator

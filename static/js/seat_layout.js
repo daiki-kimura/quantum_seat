@@ -5,16 +5,26 @@
 // グローバル変数
 let canvas, ctx;
 let seats = [];
+let tables = [];
 let selectedSeat = null;
+let selectedTable = null;
 let isDragging = false;
+let isDrawingTable = false;
 let dragOffset = { x: 0, y: 0 };
+let tableStartPos = null;
 let nextSeatId = 1;
+let nextTableId = 1;
 
 // 座席のデフォルト設定
 const SEAT_RADIUS = 25;
 const SEAT_COLOR = '#667eea';
 const SEAT_SELECTED_COLOR = '#764ba2';
 const SEAT_TEXT_COLOR = '#ffffff';
+
+// 机のデフォルト設定
+const TABLE_COLOR = '#8B4513';
+const TABLE_SELECTED_COLOR = '#A0522D';
+const TABLE_STROKE_COLOR = '#654321';
 
 /**
  * キャンバスの初期化
@@ -51,10 +61,20 @@ function drawCanvas() {
     // グリッド線を描画
     drawGrid();
 
+    // すべての机を描画
+    tables.forEach(table => {
+        drawTable(table);
+    });
+
     // すべての座席を描画
     seats.forEach(seat => {
         drawSeat(seat);
     });
+
+    // 机を描画中の場合
+    if (isDrawingTable && tableStartPos) {
+        drawTemporaryTable();
+    }
 
     // 座席数を更新
     updateSeatCount();
@@ -111,6 +131,49 @@ function drawSeat(seat) {
 }
 
 /**
+ * 机を描画
+ */
+function drawTable(table) {
+    const isSelected = selectedTable && selectedTable.id === table.id;
+    const color = isSelected ? TABLE_SELECTED_COLOR : TABLE_COLOR;
+
+    // 机の四角形を描画
+    ctx.fillStyle = color;
+    ctx.fillRect(table.x, table.y, table.width, table.height);
+
+    // 枠線を描画
+    ctx.strokeStyle = TABLE_STROKE_COLOR;
+    ctx.lineWidth = 3;
+    ctx.strokeRect(table.x, table.y, table.width, table.height);
+}
+
+/**
+ * 一時的な机を描画（描画中）
+ */
+function drawTemporaryTable() {
+    if (!tableStartPos) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const currentX = Math.min(Math.max(0, event.clientX - rect.left), canvas.width);
+    const currentY = Math.min(Math.max(0, event.clientY - rect.top), canvas.height);
+
+    const x = Math.min(tableStartPos.x, currentX);
+    const y = Math.min(tableStartPos.y, currentY);
+    const width = Math.abs(currentX - tableStartPos.x);
+    const height = Math.abs(currentY - tableStartPos.y);
+
+    // 半透明の机を描画
+    ctx.fillStyle = 'rgba(139, 69, 19, 0.5)';
+    ctx.fillRect(x, y, width, height);
+
+    ctx.strokeStyle = TABLE_STROKE_COLOR;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    ctx.strokeRect(x, y, width, height);
+    ctx.setLineDash([]);
+}
+
+/**
  * マウスダウンイベント
  */
 function handleMouseDown(e) {
@@ -118,13 +181,31 @@ function handleMouseDown(e) {
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
+    // Shiftキーが押されている場合は机描画モード
+    if (e.shiftKey) {
+        isDrawingTable = true;
+        tableStartPos = { x, y };
+        selectedSeat = null;
+        selectedTable = null;
+        return;
+    }
+
     // クリックされた座席を探す
     selectedSeat = findSeatAt(x, y);
+    selectedTable = null;
 
     if (selectedSeat) {
         isDragging = true;
         dragOffset.x = x - selectedSeat.x;
         dragOffset.y = y - selectedSeat.y;
+    } else {
+        // 座席がない場合、机を探す
+        selectedTable = findTableAt(x, y);
+        if (selectedTable) {
+            isDragging = true;
+            dragOffset.x = x - selectedTable.x;
+            dragOffset.y = y - selectedTable.y;
+        }
     }
 
     drawCanvas();
@@ -134,39 +215,90 @@ function handleMouseDown(e) {
  * マウス移動イベント
  */
 function handleMouseMove(e) {
-    if (!isDragging || !selectedSeat) return;
-
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    // 座席の位置を更新（キャンバス内に制限）
-    selectedSeat.x = Math.max(SEAT_RADIUS, Math.min(canvas.width - SEAT_RADIUS, x - dragOffset.x));
-    selectedSeat.y = Math.max(SEAT_RADIUS, Math.min(canvas.height - SEAT_RADIUS, y - dragOffset.y));
+    // 机描画中
+    if (isDrawingTable) {
+        drawCanvas();
+        return;
+    }
 
-    drawCanvas();
+    // 座席ドラッグ中
+    if (isDragging && selectedSeat) {
+        selectedSeat.x = Math.max(SEAT_RADIUS, Math.min(canvas.width - SEAT_RADIUS, x - dragOffset.x));
+        selectedSeat.y = Math.max(SEAT_RADIUS, Math.min(canvas.height - SEAT_RADIUS, y - dragOffset.y));
+        drawCanvas();
+    }
+
+    // 机ドラッグ中
+    if (isDragging && selectedTable) {
+        selectedTable.x = Math.max(0, Math.min(canvas.width - selectedTable.width, x - dragOffset.x));
+        selectedTable.y = Math.max(0, Math.min(canvas.height - selectedTable.height, y - dragOffset.y));
+        drawCanvas();
+    }
 }
 
 /**
  * マウスアップイベント
  */
 function handleMouseUp(e) {
+    // 机描画完了
+    if (isDrawingTable && tableStartPos) {
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        const tableX = Math.min(tableStartPos.x, x);
+        const tableY = Math.min(tableStartPos.y, y);
+        const width = Math.abs(x - tableStartPos.x);
+        const height = Math.abs(y - tableStartPos.y);
+
+        // 最小サイズチェック
+        if (width > 30 && height > 30) {
+            tables.push({
+                id: nextTableId++,
+                x: tableX,
+                y: tableY,
+                width: width,
+                height: height
+            });
+        }
+
+        isDrawingTable = false;
+        tableStartPos = null;
+        drawCanvas();
+    }
+
     isDragging = false;
 }
 
 /**
- * ダブルクリックイベント（座席削除）
+ * ダブルクリックイベント（座席・机削除）
  */
 function handleDoubleClick(e) {
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
+    // 座席を探す
     const seat = findSeatAt(x, y);
     if (seat) {
         if (confirm(`座席 ${seat.label} を削除しますか？`)) {
             seats = seats.filter(s => s.id !== seat.id);
             selectedSeat = null;
+            drawCanvas();
+        }
+        return;
+    }
+
+    // 机を探す
+    const table = findTableAt(x, y);
+    if (table) {
+        if (confirm('この机を削除しますか？')) {
+            tables = tables.filter(t => t.id !== table.id);
+            selectedTable = null;
             drawCanvas();
         }
     }
@@ -181,6 +313,20 @@ function findSeatAt(x, y) {
         const distance = Math.sqrt(Math.pow(x - seat.x, 2) + Math.pow(y - seat.y, 2));
         if (distance <= SEAT_RADIUS) {
             return seat;
+        }
+    }
+    return null;
+}
+
+/**
+ * 指定座標の机を探す
+ */
+function findTableAt(x, y) {
+    for (let i = tables.length - 1; i >= 0; i--) {
+        const table = tables[i];
+        if (x >= table.x && x <= table.x + table.width &&
+            y >= table.y && y <= table.y + table.height) {
+            return table;
         }
     }
     return null;
@@ -205,12 +351,15 @@ function addSeat() {
  * すべての座席をクリア
  */
 function clearSeats() {
-    if (seats.length === 0) return;
+    if (seats.length === 0 && tables.length === 0) return;
 
-    if (confirm('すべての座席を削除しますか？')) {
+    if (confirm('すべての座席と机を削除しますか？')) {
         seats = [];
+        tables = [];
         selectedSeat = null;
+        selectedTable = null;
         nextSeatId = 1;
+        nextTableId = 1;
         drawCanvas();
     }
 }
@@ -339,6 +488,15 @@ function drawResultCanvas(assignments) {
         resultCtx.lineTo(resultCanvas.width, y);
         resultCtx.stroke();
     }
+
+    // 机を描画
+    tables.forEach(table => {
+        resultCtx.fillStyle = TABLE_COLOR;
+        resultCtx.fillRect(table.x, table.y, table.width, table.height);
+        resultCtx.strokeStyle = TABLE_STROKE_COLOR;
+        resultCtx.lineWidth = 3;
+        resultCtx.strokeRect(table.x, table.y, table.width, table.height);
+    });
 
     // 割り当てられた座席を描画
     assignments.forEach((assignment, index) => {
