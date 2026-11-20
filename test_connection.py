@@ -20,7 +20,6 @@ print("1. 環境変数の確認")
 print(f"   トークンが設定されている: {'はい' if token else 'いいえ'}")
 if token:
     print(f"   トークンの長さ: {len(token)} 文字")
-    print(f"   トークンの先頭: {token[:10]}...")
 print(f"   インスタンス(CRN)が設定されている: {'はい' if instance else 'いいえ'}")
 if instance:
     print(f"   インスタンス: {instance[:60]}...")

@@ -4,112 +4,175 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quantum Seat - 量子乱数で席替え</title>
+    <title>量子乱数席ぎめツール by IBM Quantum, Qiskit, and IBM Bob</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 
 <body>
-    <div class="container">
-        <header>
-            <h1>🎲 Quantum Seat</h1>
-            <p class="subtitle">IBM Quantumで生成した真の乱数を使った席替えアプリ</p>
-            <div id="backend-info" class="backend-info">
-                <span id="backend-status">バックエンド情報を取得中...</span>
+    <header class="app-header">
+        <div class="header-title"><strong>量子乱数席ぎめツール</strong></div>
+        <nav class="tabs">
+            <button type="button" class="tab active" data-tab="reception">受付</button>
+            <button type="button" class="tab" data-tab="layout">会場レイアウト</button>
+            <a class="nav-link" href="{{ url_for('about') }}">仕組み</a>
+        </nav>
+    </header>
+
+    <section class="hero">
+        <div class="hero-inner">
+            <div>
+                <p class="eyebrow">Seating draw</p>
+                <h1>量子乱数席ぎめツール <span class="h1-by">by IBM Quantum, Qiskit, and IBM Bob</span></h1>
             </div>
-        </header>
+            <div id="pool-card" class="pool-card">
+                <div id="backend-status" class="pool-title">乱数プールを確認中...</div>
+                <div id="pool-detail" class="pool-detail"></div>
+                <div id="pool-remaining-row" class="pool-remaining-row" style="display: none;">
+                    <span class="pool-remaining-label">残り</span>
+                    <span id="pool-remaining" class="pool-remaining">0</span>
+                    <span id="pool-total" class="pool-total"></span>
+                </div>
+            </div>
+        </div>
+    </section>
 
+    <div class="container">
         <main>
-            <!-- ステップ1: 参加者入力 -->
-            <section class="step-section" id="step1">
-                <h2>ステップ1: 参加者を入力</h2>
-                <div class="participants-input">
-                    <div class="input-group">
-                        <label for="participant-count">参加者数:</label>
-                        <input type="number" id="participant-count" value="{{ default_participants }}" min="1"
-                            max="100">
-                        <button onclick="generateParticipantInputs()" class="btn btn-secondary">入力欄を生成</button>
+            <!-- 受付 -->
+            <div id="panel-reception" class="panel">
+                <div id="notice" class="notice" style="display: none;"></div>
+
+                <div class="reception-grid">
+                    <div class="reception-side">
+                        <section class="card">
+                            <h2>受付</h2>
+                            <form id="checkin-form" autocomplete="off">
+                                <label for="guest-name">お名前</label>
+                                <input type="text" id="guest-name" maxlength="50" placeholder="候補から選ぶか、名前を入力" list="participant-list"
+                                    required>
+                                <datalist id="participant-list"></datalist>
+                                <div id="name-chips" class="name-chips" aria-label="名前の候補"></div>
+                                <button type="submit" id="checkin-btn" class="btn btn-primary btn-large btn-block">
+                                    量子乱数で席を決める<span id="checkin-bits" class="btn-bits"></span>
+                                </button>
+                            </form>
+
+                            <div id="loading" class="loading" style="display: none;">
+                                <div class="spinner"></div>
+                                <p id="loading-text">席を決めています...</p>
+                            </div>
+
+                            <div id="draw-stage" class="draw-stage" style="display: none;" role="status" aria-live="polite">
+                                <div id="draw-caption" class="draw-caption"></div>
+                                <div class="draw-ball" id="draw-ball"><span id="draw-ball-text">?</span></div>
+                                <div id="amp-bars" class="amp-bars" aria-hidden="true"></div>
+                                <div class="draw-skip">クリックでスキップ</div>
+                            </div>
+
+                            <div id="result-card" class="result-card" style="display: none;">
+                                <div class="result-name"><span id="result-name"></span> さんの席は</div>
+                                <div class="result-seat"><span id="result-seat"></span></div>
+                                <div id="result-meta" class="result-meta"></div>
+                            </div>
+                        </section>
+
+                        <section class="card">
+                            <h2>参加者リスト（名前の候補）<span id="participants-count" class="muted"></span></h2>
+                            <p class="muted note">1行に1名。ここに入れた名前が受付の候補になります（着席済みの人は候補から消えます）。リストにない名前も、受付で直接入力できます。</p>
+                            <textarea id="participants-text" rows="8" maxlength="30000" placeholder="例:&#10;山田&#10;佐藤&#10;鈴木"></textarea>
+                            <div class="actions">
+                                <button type="button" id="participants-save" class="btn btn-primary btn-small">この内容で上書き保存</button>
+                                <button type="button" id="participants-clear" class="btn btn-secondary btn-small">リストを空にする</button>
+                            </div>
+                        </section>
                     </div>
 
-                    <div id="participants-list" class="participants-list">
-                        <!-- 参加者入力欄が動的に生成される -->
+                    <div class="reception-main">
+                        <section class="card">
+                            <div class="card-header">
+                                <h2>会場</h2>
+                                <div id="stats" class="stats"></div>
+                            </div>
+                            <div class="canvas-container">
+                                <canvas id="venue-canvas" width="800" height="600"></canvas>
+                            </div>
+                            <div class="legend">
+                                <span><i class="dot dot-free"></i>空席</span>
+                                <span><i class="dot dot-taken"></i>着席済み</span>
+                                <span><i class="dot dot-new"></i>今回の席</span>
+                            </div>
+                        </section>
+
+                        <section class="card">
+                            <div class="card-header">
+                                <h2>着席一覧</h2>
+                                <div class="actions">
+                                    <button type="button" id="export-btn" class="btn btn-secondary btn-small">CSV出力</button>
+                                    <button type="button" id="reshuffle-btn" class="btn btn-primary btn-small">全体の配置換え<span id="reshuffle-bits" class="btn-bits"></span></button>
+                                    <button type="button" id="reset-btn" class="btn btn-danger btn-small">全体リセット</button>
+                                </div>
+                            </div>
+                            <table id="guest-table">
+                                <thead>
+                                    <tr>
+                                        <th>席</th>
+                                        <th>名前</th>
+                                        <th>受付時刻</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="guest-tbody"></tbody>
+                            </table>
+                            <p id="guest-empty" class="muted">まだ誰も着席していません</p>
+                        </section>
                     </div>
                 </div>
-            </section>
+            </div>
 
-            <!-- ステップ2: 座席配置 -->
-            <section class="step-section" id="step2">
-                <h2>ステップ2: 座席を配置</h2>
-                <div class="seat-controls">
-                    <button onclick="addSeat()" class="btn btn-secondary">座席を追加</button>
-                    <button onclick="clearSeats()" class="btn btn-danger">すべてクリア</button>
-                    <button onclick="loadPreset('table')" class="btn btn-secondary">テーブル配置</button>
-                    <button onclick="loadPreset('circle')" class="btn btn-secondary">円形配置</button>
-                    <div class="seat-count">
-                        座席数: <span id="seat-count">0</span>
-                    </div>
-                </div>
+            <!-- 会場レイアウト編集 -->
+            <div id="panel-layout" class="panel" style="display: none;">
+                <section class="card">
+                    <h2>会場レイアウトを設定</h2>
 
-                <div class="canvas-container">
-                    <canvas id="seat-canvas" width="800" height="600"></canvas>
-                </div>
-
-                <div class="canvas-instructions">
-                    <p>💡 座席をドラッグして配置を変更できます</p>
-                    <p>💡 座席をダブルクリックで削除できます</p>
-                    <p>💡 <strong>Shiftキーを押しながらドラッグ</strong>で机（四角形）を描画できます</p>
-                    <p>💡 机をクリックして選択、ドラッグで移動、ダブルクリックで削除できます</p>
-                </div>
-            </section>
-
-            <!-- ステップ3: 席替え実行 -->
-            <section class="step-section" id="step3">
-                <h2>ステップ3: 席替えを実行</h2>
-                <div class="shuffle-controls">
-                    <button onclick="shuffleSeats()" class="btn btn-primary btn-large">
-                        🎲 量子乱数で席替え実行
-                    </button>
-                </div>
-
-                <div id="loading" class="loading" style="display: none;">
-                    <div class="spinner"></div>
-                    <p>量子回路を実行中...</p>
-                </div>
-            </section>
-
-            <!-- 結果表示 -->
-            <section class="step-section" id="result-section" style="display: none;">
-                <h2>✨ 席替え結果</h2>
-                <div id="result-info" class="result-info">
-                    <!-- 結果情報が表示される -->
-                </div>
-
-                <div class="result-display">
-                    <div class="result-visual">
-                        <h3>座席配置図</h3>
-                        <canvas id="result-canvas" width="800" height="600"></canvas>
+                    <div class="seat-controls">
+                        <div class="tool-group" role="group" aria-label="ツール">
+                            <button type="button" class="btn btn-tool active" data-tool="select">選択・移動</button>
+                            <button type="button" class="btn btn-tool" data-tool="rect">□ 四角（ドラッグ）</button>
+                            <button type="button" class="btn btn-tool" data-tool="ellipse">○ 丸（ドラッグ）</button>
+                            <button type="button" class="btn btn-tool" data-tool="polygon">⬠ 多角形（頂点クリック）</button>
+                            <button type="button" class="btn btn-tool" data-tool="seat">● 席を置く</button>
+                        </div>
+                        <div class="tool-group">
+                            <button type="button" id="grow-btn" class="btn btn-secondary btn-small">机を大きく</button>
+                            <button type="button" id="shrink-btn" class="btn btn-secondary btn-small">机を小さく</button>
+                            <button type="button" id="delete-btn" class="btn btn-danger btn-small">選択を削除</button>
+                            <button type="button" id="clear-layout-btn" class="btn btn-danger btn-small">レイアウトを全消去</button>
+                        </div>
+                        <div class="seat-count">
+                            席数: <span id="seat-count">0</span>
+                            <span id="layout-status" class="muted"></span>
+                        </div>
                     </div>
 
-                    <div class="result-table">
-                        <h3>割り当て一覧</h3>
-                        <table id="assignment-table">
-                            <thead>
-                                <tr>
-                                    <th>座席番号</th>
-                                    <th>参加者名</th>
-                                </tr>
-                            </thead>
-                            <tbody id="assignment-tbody">
-                                <!-- 割り当て結果が表示される -->
-                            </tbody>
-                        </table>
+                    <div class="draw-bar">
+                        <span id="draw-hint" class="draw-hint"></span>
+                        <button type="button" id="poly-finish-btn" class="btn btn-primary btn-small" disabled>多角形を確定</button>
+                        <button type="button" id="poly-cancel-btn" class="btn btn-secondary btn-small" disabled>作図を取消</button>
                     </div>
-                </div>
 
-                <div class="result-actions">
-                    <button onclick="exportResult()" class="btn btn-secondary">結果をエクスポート</button>
-                    <button onclick="resetApp()" class="btn btn-secondary">最初からやり直す</button>
-                </div>
-            </section>
+                    <div class="canvas-container">
+                        <canvas id="seat-canvas" width="800" height="600"></canvas>
+                    </div>
+
+                    <div class="canvas-instructions">
+                        <p>□ 四角・○ 丸: キャンバス上でドラッグして描きます（Shiftキーで正方形・正円。クリックだけなら標準サイズ）</p>
+                        <p>⬠ 多角形: 頂点を順にクリックし、始点（赤い点）をクリック・ダブルクリック・Enterで確定します。Backspaceで直前の頂点を戻し、Escで取消</p>
+                        <p>● 席を置く: 席のある場所をクリック。「選択・移動」でテーブルや席をドラッグで動かせます</p>
+                        <p>選択したテーブルは「机を大きく／小さく」で拡大縮小、「選択を削除」（Deleteキー）で削除できます</p>
+                        <p>変更は自動で保存されます。着席中の席は削除できません</p>
+                    </div>
+                </section>
+            </div>
         </main>
 
         <footer>
@@ -118,203 +181,24 @@
         </footer>
     </div>
 
+    <!-- 全体の配置換えの演出（全画面） -->
+    <div id="shuffle-overlay" class="shuffle-overlay" style="display: none;" role="status" aria-live="polite">
+        <div class="shuffle-head">
+            <div id="shuffle-title" class="shuffle-title"></div>
+            <div id="shuffle-sub" class="shuffle-sub"></div>
+        </div>
+        <canvas id="shuffle-canvas" class="shuffle-canvas" width="1600" height="1200"></canvas>
+        <div class="shuffle-foot">
+            <span class="shuffle-bits-label">量子乱数 残り</span>
+            <span id="shuffle-bits" class="shuffle-bits">0</span>
+            <span class="shuffle-bits-label">ビット</span>
+            <span class="shuffle-skip">クリックでスキップ</span>
+        </div>
+    </div>
+
     <script src="{{ url_for('static', filename='js/seat_layout.js') }}"></script>
-    <script>
-        // participants.txtから読み込んだ参加者リスト
-        const preloadedParticipants = {{ participants| tojson | safe }};
-
-        // ページ読み込み時の初期化
-        document.addEventListener('DOMContentLoaded', function () {
-            // バックエンド情報を取得
-            fetchBackendInfo();
-
-            // デフォルトの参加者入力欄を生成
-            generateParticipantInputs();
-
-            // キャンバスを初期化
-            initCanvas();
-        });
-
-        // バックエンド情報を取得
-        async function fetchBackendInfo() {
-            try {
-                const response = await fetch('/api/backend-info');
-                const data = await response.json();
-
-                if (data.success) {
-                    const statusElement = document.getElementById('backend-status');
-                    const backendName = data.backend_name || 'None';
-                    const isQuantum = data.is_quantum;
-                    const tokenConfigured = data.token_configured;
-
-                    let statusHTML = '';
-                    if (isQuantum && tokenConfigured) {
-                        statusHTML = `✅ 量子バックエンド: <strong>${backendName}</strong>`;
-                    } else if (tokenConfigured) {
-                        statusHTML = `⚠️ シミュレーター: <strong>${backendName}</strong>`;
-                    } else {
-                        statusHTML = `⚠️ トークン未設定 - 疑似乱数を使用`;
-                    }
-
-                    statusElement.innerHTML = statusHTML;
-                }
-            } catch (error) {
-                console.error('バックエンド情報の取得に失敗:', error);
-            }
-        }
-
-        // 参加者入力欄を生成
-        function generateParticipantInputs() {
-            const count = parseInt(document.getElementById('participant-count').value);
-            const container = document.getElementById('participants-list');
-
-            container.innerHTML = '';
-
-            for (let i = 1; i <= count; i++) {
-                const inputDiv = document.createElement('div');
-                inputDiv.className = 'participant-input';
-
-                // participants.txtから読み込んだ名前があれば使用
-                const defaultName = (preloadedParticipants && preloadedParticipants[i - 1])
-                    ? preloadedParticipants[i - 1]
-                    : `参加者${i}`;
-
-                inputDiv.innerHTML = `
-                    <label>${i}.</label>
-                    <input type="text" id="participant-${i}" placeholder="参加者${i}の名前" value="${defaultName}">
-                `;
-                container.appendChild(inputDiv);
-            }
-        }
-
-        // 席替えを実行
-        async function shuffleSeats() {
-            // 参加者を取得
-            const count = parseInt(document.getElementById('participant-count').value);
-            const participants = [];
-
-            for (let i = 1; i <= count; i++) {
-                const name = document.getElementById(`participant-${i}`).value.trim();
-                if (name) {
-                    participants.push(name);
-                }
-            }
-
-            if (participants.length === 0) {
-                alert('参加者を入力してください');
-                return;
-            }
-
-            // 座席を取得
-            const seats = getSeats();
-
-            if (seats.length === 0) {
-                alert('座席を配置してください');
-                return;
-            }
-
-            if (participants.length > seats.length) {
-                alert(`座席数（${seats.length}）が参加者数（${participants.length}）より少ないです`);
-                return;
-            }
-
-            // ローディング表示
-            document.getElementById('loading').style.display = 'block';
-            document.getElementById('result-section').style.display = 'none';
-
-            try {
-                const response = await fetch('/api/shuffle-seats', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        participants: participants,
-                        seats: seats
-                    })
-                });
-
-                const data = await response.json();
-
-                if (data.success) {
-                    displayResult(data);
-                } else {
-                    alert('エラー: ' + data.error);
-                }
-            } catch (error) {
-                console.error('席替えエラー:', error);
-                alert('席替えの実行に失敗しました');
-            } finally {
-                document.getElementById('loading').style.display = 'none';
-            }
-        }
-
-        // 結果を表示
-        function displayResult(data) {
-            const resultSection = document.getElementById('result-section');
-            const resultInfo = document.getElementById('result-info');
-            const tbody = document.getElementById('assignment-tbody');
-
-            // 結果情報を表示
-            const method = data.method === 'quantum' ? '量子乱数' : '疑似乱数';
-            const backend = data.backend || 'None';
-            const timestamp = new Date(data.timestamp).toLocaleString('ja-JP');
-
-            resultInfo.innerHTML = `
-                <div class="info-item">
-                    <strong>生成方法:</strong> ${method}
-                </div>
-                <div class="info-item">
-                    <strong>バックエンド:</strong> ${backend}
-                </div>
-                <div class="info-item">
-                    <strong>実行時刻:</strong> ${timestamp}
-                </div>
-            `;
-
-            // テーブルに割り当てを表示
-            tbody.innerHTML = '';
-            data.assignments.forEach((assignment, index) => {
-                const row = tbody.insertRow();
-                row.innerHTML = `
-                    <td>${assignment.seat.label || (index + 1)}</td>
-                    <td>${assignment.participant}</td>
-                `;
-            });
-
-            // 座席配置図を描画
-            drawResultCanvas(data.assignments);
-
-            // 結果セクションを表示
-            resultSection.style.display = 'block';
-            resultSection.scrollIntoView({ behavior: 'smooth' });
-        }
-
-        // 結果をエクスポート
-        function exportResult() {
-            const table = document.getElementById('assignment-table');
-            let csv = '座席番号,参加者名\n';
-
-            const rows = table.querySelectorAll('tbody tr');
-            rows.forEach(row => {
-                const cells = row.querySelectorAll('td');
-                csv += `${cells[0].textContent},${cells[1].textContent}\n`;
-            });
-
-            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = `seat_assignment_${new Date().getTime()}.csv`;
-            link.click();
-        }
-
-        // アプリをリセット
-        function resetApp() {
-            if (confirm('最初からやり直しますか？')) {
-                location.reload();
-            }
-        }
-    </script>
+    <script src="{{ url_for('static', filename='js/shuffle_fx.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/reception.js') }}"></script>
 </body>
 
 </html>

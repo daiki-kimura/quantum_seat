@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>仕組み - 量子乱数席ぎめツール</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+    <header class="app-header">
+        <a class="header-title" href="{{ url_for('index') }}"><strong>量子乱数席ぎめツール</strong></a>
+        <nav class="tabs">
+            <a class="nav-link" href="{{ url_for('index') }}">受付</a>
+            <a class="nav-link" href="{{ url_for('index') }}#layout">会場レイアウト</a>
+            <a class="nav-link active" href="{{ url_for('about') }}">仕組み</a>
+        </nav>
+    </header>
+
+    <section class="hero">
+        <div class="hero-inner">
+            <div>
+                <p class="eyebrow">How it works</p>
+                <h1>量子乱数で席が決まるまで</h1>
+            </div>
+        </div>
+    </section>
+
+    <div class="container about">
+        <main>
+            <section class="card">
+                <h2>全体の流れ</h2>
+                <p>席は「実機の量子コンピューターで測定した乱数」から決まります。ただし、受付のたびに実機へジョブを投げると待ち時間が長いため、
+                    <strong>イベントの前にまとめて測定しておき</strong>、受付ではその結果を順番に読み出しています。</p>
+                <div class="flow">
+                    <div class="flow-step">
+                        <div class="flow-num">1</div>
+                        <div class="flow-title">事前に実機で測定</div>
+                        <div class="flow-body"><code>fetch_quantum_pool.py</code><br>量子ビットを重ね合わせにして測定し、0/1のビット列を得る</div>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-step">
+                        <div class="flow-num">2</div>
+                        <div class="flow-title">ファイルに保存</div>
+                        <div class="flow-body"><code>data/random_pool.json</code><br>測定結果の「乱数マップ」と、どこまで使ったかを記録</div>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-step">
+                        <div class="flow-num">3</div>
+                        <div class="flow-title">受付で読み出して席を決定</div>
+                        <div class="flow-body">空席の数に合わせて先頭から必要なビットを読み、席を選ぶ（読んだビットは二度と使わない）</div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>実行した量子回路</h2>
+                <p>回路はとても単純です。すべての量子ビットに <strong>アダマール（H）ゲート</strong> をかけてから測定します。</p>
+
+                <div class="figure">
+                    <svg viewBox="0 0 640 230" role="img" aria-label="全量子ビットにHゲートをかけて測定する量子回路">
+                        <g font-family="IBM Plex Mono, Menlo, monospace" font-size="14" fill="#f4f4f4">
+                            <!-- q0 q1 q2 q99 -->
+                            <text x="14" y="39">q0</text>
+                            <text x="14" y="89">q1</text>
+                            <text x="14" y="139">q2</text>
+                            <text x="2" y="209">q99</text>
+                            <text x="300" y="172" font-size="22" fill="#a8a8a8">⋮</text>
+
+                            <g stroke="#8d8d8d" stroke-width="1.5">
+                                <line x1="50" y1="35" x2="400" y2="35" /><line x1="436" y1="35" x2="450" y2="35" />
+                                <line x1="50" y1="85" x2="400" y2="85" /><line x1="436" y1="85" x2="450" y2="85" />
+                                <line x1="50" y1="135" x2="400" y2="135" /><line x1="436" y1="135" x2="450" y2="135" />
+                                <line x1="50" y1="205" x2="400" y2="205" /><line x1="436" y1="205" x2="450" y2="205" />
+                            </g>
+
+                            <!-- Hゲート -->
+                            <g fill="#0f62fe">
+                                <rect x="150" y="20" width="36" height="30" />
+                                <rect x="150" y="70" width="36" height="30" />
+                                <rect x="150" y="120" width="36" height="30" />
+                                <rect x="150" y="190" width="36" height="30" />
+                            </g>
+                            <g text-anchor="middle" font-weight="600">
+                                <text x="168" y="40">H</text>
+                                <text x="168" y="90">H</text>
+                                <text x="168" y="140">H</text>
+                                <text x="168" y="210">H</text>
+                            </g>
+
+                            <!-- 測定 -->
+                            <g fill="#393939" stroke="#c6c6c6" stroke-width="1.5">
+                                <rect x="400" y="20" width="36" height="30" />
+                                <rect x="400" y="70" width="36" height="30" />
+                                <rect x="400" y="120" width="36" height="30" />
+                                <rect x="400" y="190" width="36" height="30" />
+                            </g>
+                            <g fill="none" stroke="#f4f4f4" stroke-width="1.5">
+                                <path d="M406 42 A12 12 0 0 1 430 42" />
+                                <path d="M406 92 A12 12 0 0 1 430 92" />
+                                <path d="M406 142 A12 12 0 0 1 430 142" />
+                                <path d="M406 212 A12 12 0 0 1 430 212" />
+                                <line x1="418" y1="42" x2="426" y2="28" />
+                                <line x1="418" y1="92" x2="426" y2="78" />
+                                <line x1="418" y1="142" x2="426" y2="128" />
+                                <line x1="418" y1="212" x2="426" y2="198" />
+                            </g>
+                            <g text-anchor="start" fill="#78a9ff">
+                                <text x="470" y="39">→ 0 または 1</text>
+                                <text x="470" y="89">→ 0 または 1</text>
+                                <text x="470" y="139">→ 0 または 1</text>
+                                <text x="470" y="209">→ 0 または 1</text>
+                            </g>
+                        </g>
+                    </svg>
+                    <p class="figure-caption">100量子ビット版（図は4本だけ表示）。量子ビット同士をつなぐゲートはなく、各ビットは独立に測定されます。</p>
+                </div>
+
+                <h3>なぜこれで乱数になるのか</h3>
+                <ul>
+                    <li>量子ビットは最初 <code>|0⟩</code> の状態です。</li>
+                    <li>Hゲートで <code>(|0⟩ + |1⟩) / √2</code> の重ね合わせ状態になります。0と1の確率が<strong>どちらも50%</strong>です。</li>
+                    <li>測定すると、どちらか一方の値に確定します。どちらになるかは量子力学の原理上、事前に決まっておらず、測定するまで誰にも予測できません（疑似乱数のように「種」から計算された値ではありません）。</li>
+                </ul>
+
+                <h3>実機で実際に動く形</h3>
+                <p>実機には「Hゲート」という命令はなく、その機械が持つ基本ゲート（<code>cz, id, rz, sx, x</code>）に変換されて実行されます（Qiskitのトランスパイル）。
+                    Hゲートは「<code>Rz(π/2)</code> → <code>√X</code> → <code>Rz(π/2)</code>」の3つに分解されます。3量子ビットで変換した例:</p>
+                <div class="figure">
+<svg viewBox="0 0 640 180" role="img" aria-label="Hゲートが Rz(π/2), √X, Rz(π/2) に分解された回路">
+<g font-family="IBM Plex Mono, Menlo, monospace" font-size="12" fill="#f4f4f4" text-anchor="middle">
+<text x="22" y="39">q0</text>
+<line x1="46" y1="35" x2="552" y2="35" stroke="#8d8d8d" stroke-width="1.5" />
+<rect x="70" y="20" width="74" height="30" fill="#393939" stroke="#c6c6c6" stroke-width="1" />
+<text x="107.0" y="39">Rz(π/2)</text>
+<rect x="166" y="20" width="44" height="30" fill="#0f62fe" stroke="#c6c6c6" stroke-width="1" />
+<text x="188.0" y="39">√X</text>
+<rect x="232" y="20" width="74" height="30" fill="#393939" stroke="#c6c6c6" stroke-width="1" />
+<text x="269.0" y="39">Rz(π/2)</text>
+<rect x="340" y="20" width="36" height="30" fill="#393939" stroke="#c6c6c6" stroke-width="1.5" />
+<path d="M346 42 A12 12 0 0 1 370 42" fill="none" stroke="#f4f4f4" stroke-width="1.5" />
+<line x1="358" y1="42" x2="366" y2="28" stroke="#f4f4f4" stroke-width="1.5" />
+<text x="22" y="89">q1</text>
+<line x1="46" y1="85" x2="552" y2="85" stroke="#8d8d8d" stroke-width="1.5" />
+<rect x="70" y="70" width="74" height="30" fill="#393939" stroke="#c6c6c6" stroke-width="1" />
+<text x="107.0" y="89">Rz(π/2)</text>
+<rect x="166" y="70" width="44" height="30" fill="#0f62fe" stroke="#c6c6c6" stroke-width="1" />
+<text x="188.0" y="89">√X</text>
+<rect x="232" y="70" width="74" height="30" fill="#393939" stroke="#c6c6c6" stroke-width="1" />
+<text x="269.0" y="89">Rz(π/2)</text>
+<rect x="340" y="70" width="36" height="30" fill="#393939" stroke="#c6c6c6" stroke-width="1.5" />
+<path d="M346 92 A12 12 0 0 1 370 92" fill="none" stroke="#f4f4f4" stroke-width="1.5" />
+<line x1="358" y1="92" x2="366" y2="78" stroke="#f4f4f4" stroke-width="1.5" />
+<text x="22" y="139">q2</text>
+<line x1="46" y1="135" x2="552" y2="135" stroke="#8d8d8d" stroke-width="1.5" />
+<rect x="70" y="120" width="74" height="30" fill="#393939" stroke="#c6c6c6" stroke-width="1" />
+<text x="107.0" y="139">Rz(π/2)</text>
+<rect x="166" y="120" width="44" height="30" fill="#0f62fe" stroke="#c6c6c6" stroke-width="1" />
+<text x="188.0" y="139">√X</text>
+<rect x="232" y="120" width="74" height="30" fill="#393939" stroke="#c6c6c6" stroke-width="1" />
+<text x="269.0" y="139">Rz(π/2)</text>
+<rect x="340" y="120" width="36" height="30" fill="#393939" stroke="#c6c6c6" stroke-width="1.5" />
+<path d="M346 142 A12 12 0 0 1 370 142" fill="none" stroke="#f4f4f4" stroke-width="1.5" />
+<line x1="358" y1="142" x2="366" y2="128" stroke="#f4f4f4" stroke-width="1.5" />
+</g>
+</svg>
+<p class="figure-caption">Hゲート1つが Rz → √X → Rz の3ゲートに置き換わる（3量子ビットで変換した例）。</p>
+</div>
+            </section>
+
+            <section class="card">
+                <h2>乱数マップ</h2>
+                <p>回路を <strong>1ショット</strong> 実行すると、量子ビット数ぶんのビット列が1つ得られます。これを1つの「乱数マップ」と呼んでいます。
+                    <code>SamplerV2</code> で <code>shots=100</code> を指定すると、100個のマップ（各100ビット = 計10,000ビット）を1回のジョブで取得できます（既定値）。</p>
+
+                <h3>保存形式</h3>
+                <p><code>data/random_pool.json</code> に、全マップを順番に連結したビット列（<code>bits</code>）と、そこまで使ったビット数（<code>cursor</code>）を保存します。
+                    受付のたびに <code>cursor</code> が進み、サーバーを再起動しても続きから読みます。</p>
+            </section>
+
+            <section class="card">
+                <h2>受付で席を決める方法</h2>
+                <p>空席が <strong>n 席</strong> のとき、0〜n-1 の番号を1つ選び、その番号の空席に着席します。ビット列から n 未満の整数を<strong>偏りなく</strong>取り出すため、
+                    「棄却サンプリング」を使っています。</p>
+
+                <div class="example">
+                    <div class="example-title">例: 空席が7席のとき</div>
+                    <ol>
+                        <li>7通りを表すには 3ビット（0〜7）が必要なので、プールの先頭から<strong>3ビット</strong>読む</li>
+                        <li>値が 0〜6 ならその番号の席に決定（例: <code>101</code> → 5番目の空席）</li>
+                        <li>値が <strong>7</strong> のときは破棄して、続きの3ビットを読み直す</li>
+                    </ol>
+                    <p class="muted">「乱数 mod 7」で割り当てると一部の席が当たりやすくなってしまうため、あえて読み捨てています。読んだビット（捨てた分も含む）は再利用しません。</p>
+                </div>
+
+                <ul>
+                    <li><strong>受付</strong>: 空席から1席を選びます。</li>
+                    <li><strong>全体の配置換え</strong>: 着席者ごとに、全座席（空席を含む）から1席ずつ同じ方法で選びます（フィッシャー–イェーツ方式のシャッフル）。</li>
+                    <li><strong>1回あたりの消費量</strong>: 十数ビット程度。100ビットのマップ1個で数人ぶんが決まります。</li>
+                </ul>
+            </section>
+
+            <section class="card">
+                <h2>品質と限界（正直な説明）</h2>
+                <ul>
+                    <li><strong>実機にはわずかな偏りがあります。</strong>読み出し誤差などにより、「1」の割合が50%から1%程度ずれることがあります。席決めへの影響は小さいですが、
+                        <code>python verify_randomness.py</code> で偏り（1の割合・連の数・分布）を確認できます。</li>
+                    <li><strong>「受付の瞬間に測定」ではなく「事前に測定した値を使う」方式です。</strong>測定自体は量子コンピューターで行われた本物の乱数ですが、
+                        ファイル <code>data/random_pool.json</code> を見られる人には、これから決まる席を予測できてしまいます。ファイルは本人のみ読める権限（600）で保存しています。</li>
+                    <li><strong>プールが空になると疑似乱数に切り替わります。</strong>その場合は結果カードに「疑似乱数」と表示され、警告が出ます。</li>
+                </ul>
+            </section>
+
+            <section class="card">
+                <h2>使用技術</h2>
+                <table>
+                    <tbody>
+                        <tr>
+                            <th>量子回路の作成</th>
+                            <td>Qiskit（<code>QuantumCircuit</code> / <code>generate_preset_pass_manager</code>）</td>
+                        </tr>
+                        <tr>
+                            <th>実機での実行</th>
+                            <td>qiskit-ibm-runtime（<code>SamplerV2</code>）。実機は Heron r2（156量子ビット）</td>
+                        </tr>
+                        <tr>
+                            <th>アプリ</th>
+                            <td>Flask（受付時は IBM Quantum へ接続しません）</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+        </main>
+
+        <footer>
+            <p>Powered by IBM Quantum, Qiskit, & IBM Bob</p>
+            <p class="footer-note">このアプリケーションは教育・エンターテイメント目的で作成されています</p>
+        </footer>
+    </div>
+</body>
+
+</html>

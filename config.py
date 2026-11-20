@@ -38,6 +38,16 @@ class Config:
     DEFAULT_PARTICIPANTS = 19  # デフォルトの参加者数
     MAX_PARTICIPANTS = 100  # 最大参加者数
 
+    # 事前に取得した量子乱数（乱数マップ）のプールの保存先
+    POOL_FILE = os.getenv(
+        'POOL_FILE',
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'random_pool.json'))
+
+    # 席の状態（レイアウト・着席状況）の保存先
+    STATE_FILE = os.getenv(
+        'STATE_FILE',
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'state.json'))
+
     # セッション設定
     SESSION_TYPE = 'filesystem'
     PERMANENT_SESSION_LIFETIME = 3600  # 1時間
