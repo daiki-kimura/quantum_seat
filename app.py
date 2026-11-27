@@ -103,12 +103,13 @@ def update_layout():
     会場レイアウト（机・座席）を保存
 
     Request JSON:
-        tables: [{id, shape(rect/circle), x, y, w, h | r}]
+        tables: [{id, shape(rect/ellipse/polygon), x, y, w, h | points}]
         seats: [{id, x, y, label}]
+        annotations: [{id, type(text/arrow/line), ...}]（省略すると保存済みの書き込みを残す）
     """
     try:
         data = json_body()
-        state = store.set_layout(data.get('tables'), data.get('seats'))
+        state = store.set_layout(data.get('tables'), data.get('seats'), data.get('annotations'))
         return jsonify({'success': True, 'state': state})
     except Exception as e:
         return api_error(e, 'レイアウト保存エラー')
@@ -157,6 +158,29 @@ def check_in():
         })
     except Exception as e:
         return api_error(e, '受付エラー')
+
+
+@app.route('/api/checkin-all', methods=['POST'])
+def check_in_all():
+    """受付（一括）: 参加者リストの未着席の全員を、量子乱数で空席にまとめて割り当てる"""
+    try:
+        pool = get_quantum_generator().pool
+        with store.lock:
+            bits_before = pool.remaining_bits()
+            result = store.check_in_all(choose_index)
+            method, backend = random_method()
+            bits_used = bits_before - pool.remaining_bits()
+        return jsonify({
+            'success': True,
+            'assignments': result['assignments'],
+            'state': result['state'],
+            'method': method,
+            'backend': backend,
+            'bits_used': bits_used,
+            'pool': pool.status()
+        })
+    except Exception as e:
+        return api_error(e, '一括受付エラー')
 
 
 @app.route('/api/checkout', methods=['POST'])

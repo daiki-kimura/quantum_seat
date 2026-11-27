@@ -57,6 +57,10 @@
                                 </button>
                             </form>
 
+                            <button type="button" id="checkin-all-btn" class="btn btn-secondary btn-large btn-block checkin-all">
+                                参加者リストの全員を受付する<span id="checkin-all-bits" class="btn-bits"></span>
+                            </button>
+
                             <div id="loading" class="loading" style="display: none;">
                                 <div class="spinner"></div>
                                 <p id="loading-text">席を決めています...</p>
@@ -141,10 +145,13 @@
                             <button type="button" class="btn btn-tool" data-tool="ellipse">○ 丸（ドラッグ）</button>
                             <button type="button" class="btn btn-tool" data-tool="polygon">⬠ 多角形（頂点クリック）</button>
                             <button type="button" class="btn btn-tool" data-tool="seat">● 席を置く</button>
+                            <button type="button" class="btn btn-tool" data-tool="text">Ａ 文字</button>
+                            <button type="button" class="btn btn-tool" data-tool="arrow">→ 矢印（ドラッグ）</button>
+                            <button type="button" class="btn btn-tool" data-tool="line">／ 線（ドラッグ）</button>
                         </div>
                         <div class="tool-group">
-                            <button type="button" id="grow-btn" class="btn btn-secondary btn-small">机を大きく</button>
-                            <button type="button" id="shrink-btn" class="btn btn-secondary btn-small">机を小さく</button>
+                            <button type="button" id="grow-btn" class="btn btn-secondary btn-small">選択を大きく</button>
+                            <button type="button" id="shrink-btn" class="btn btn-secondary btn-small">選択を小さく</button>
                             <button type="button" id="delete-btn" class="btn btn-danger btn-small">選択を削除</button>
                             <button type="button" id="clear-layout-btn" class="btn btn-danger btn-small">レイアウトを全消去</button>
                         </div>
@@ -168,7 +175,9 @@
                         <p>□ 四角・○ 丸: キャンバス上でドラッグして描きます（Shiftキーで正方形・正円。クリックだけなら標準サイズ）</p>
                         <p>⬠ 多角形: 頂点を順にクリックし、始点（赤い点）をクリック・ダブルクリック・Enterで確定します。Backspaceで直前の頂点を戻し、Escで取消</p>
                         <p>● 席を置く: 席のある場所をクリック。「選択・移動」でテーブルや席をドラッグで動かせます</p>
-                        <p>選択したテーブルは「机を大きく／小さく」で拡大縮小、「選択を削除」（Deleteキー）で削除できます</p>
+                        <p>Ａ 文字: 書きたい場所をクリックして入力します（「入口」「ステージ」など）。「選択・移動」で文字をダブルクリックすると書き換えられます</p>
+                        <p>→ 矢印・／ 線: ドラッグして描きます（Shiftキーで45度刻み）。線は矢じりのない直線です。選択すると両端の丸をドラッグして向きや長さを変えられます</p>
+                        <p>選択したテーブル・文字・矢印・線は「選択を大きく／小さく」で拡大縮小、「選択を削除」（Deleteキー）で削除できます</p>
                         <p>変更は自動で保存されます。着席中の席は削除できません</p>
                     </div>
                 </section>

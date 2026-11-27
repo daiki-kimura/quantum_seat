@@ -7,6 +7,7 @@
 import copy
 import json
 import logging
+import math
 import os
 import tempfile
 import threading
@@ -21,6 +22,12 @@ CANVAS_HEIGHT = 600
 
 MAX_TABLES = 100
 MAX_SEATS = 300
+MAX_ANNOTATIONS = 100
+MAX_ANNOTATION_TEXT = 50
+MIN_TEXT_SIZE = 10
+MAX_TEXT_SIZE = 96
+DEFAULT_TEXT_SIZE = 24
+MIN_ARROW_LENGTH = 5
 MAX_NAME_LENGTH = 50
 MAX_PARTICIPANTS = 500
 TABLE_SHAPES = ('rect', 'ellipse', 'polygon')
@@ -125,6 +132,54 @@ def _clean_seats(raw) -> List[Dict]:
     return seats
 
 
+def _clean_annotations(raw) -> List[Dict]:
+    """会場図に書き込む文字・矢印・線を検証・整形する"""
+    if not isinstance(raw, list) or len(raw) > MAX_ANNOTATIONS:
+        raise ValidationError('書き込みの数が不正です')
+
+    items, seen = [], set()
+    for item in raw:
+        if not isinstance(item, dict):
+            raise ValidationError('書き込みのデータが不正です')
+        item_id = _integer(item.get('id'), 1, 1_000_000)
+        if item_id in seen:
+            raise ValidationError('書き込みのIDが重複しています')
+        seen.add(item_id)
+
+        kind = item.get('type')
+        if kind == 'text':
+            text = item.get('text')
+            if not isinstance(text, str) or not text.strip():
+                raise ValidationError('文字を入力してください')
+            text = text.strip()
+            if len(text) > MAX_ANNOTATION_TEXT:
+                raise ValidationError(f'文字は{MAX_ANNOTATION_TEXT}文字以内にしてください')
+            items.append({
+                'id': item_id,
+                'type': 'text',
+                'x': _number(item.get('x'), 0, CANVAS_WIDTH),
+                'y': _number(item.get('y'), 0, CANVAS_HEIGHT),
+                'text': text,
+                'size': _integer(item.get('size', DEFAULT_TEXT_SIZE), MIN_TEXT_SIZE, MAX_TEXT_SIZE),
+            })
+        elif kind in ('arrow', 'line'):
+            # 矢印（終点に矢じりあり）と線（矢じりなし）は同じ形式
+            segment = {
+                'id': item_id,
+                'type': kind,
+                'x1': _number(item.get('x1'), 0, CANVAS_WIDTH),
+                'y1': _number(item.get('y1'), 0, CANVAS_HEIGHT),
+                'x2': _number(item.get('x2'), 0, CANVAS_WIDTH),
+                'y2': _number(item.get('y2'), 0, CANVAS_HEIGHT),
+            }
+            if math.hypot(segment['x2'] - segment['x1'], segment['y2'] - segment['y1']) < MIN_ARROW_LENGTH:
+                raise ValidationError('矢印・線が短すぎます')
+            items.append(segment)
+        else:
+            raise ValidationError('書き込みの種類が不正です')
+    return items
+
+
 def _clean_names(raw) -> List[str]:
     """名前の入力候補を検証・整形する（前後の空白除去、空行除去、重複除去）"""
     if not isinstance(raw, list) or len(raw) > MAX_PARTICIPANTS * 2:
@@ -158,7 +213,7 @@ class SeatStore:
 
     @staticmethod
     def _empty_state() -> Dict:
-        return {'tables': [], 'seats': [], 'assignments': [], 'participants': []}
+        return {'tables': [], 'seats': [], 'annotations': [], 'assignments': [], 'participants': []}
 
     def _load(self) -> Dict:
         try:
@@ -167,6 +222,7 @@ class SeatStore:
             return {
                 'tables': _clean_tables(data.get('tables', [])),
                 'seats': _clean_seats(data.get('seats', [])),
+                'annotations': _clean_annotations(data.get('annotations', [])),
                 'assignments': list(data.get('assignments', [])),
                 'participants': _clean_names(data.get('participants', [])),
             }
@@ -197,10 +253,15 @@ class SeatStore:
 
     # ---- レイアウト ----
 
-    def set_layout(self, tables, seats) -> Dict:
-        """机・座席のレイアウトを更新する。着席中の座席は削除できない"""
+    def set_layout(self, tables, seats, annotations=None) -> Dict:
+        """
+        机・座席・書き込み（文字と矢印）のレイアウトを更新する。着席中の座席は削除できない
+
+        annotations が None のときは、保存済みの書き込みをそのまま残す。
+        """
         clean_tables = _clean_tables(tables)
         clean_seats = _clean_seats(seats)
+        clean_annotations = None if annotations is None else _clean_annotations(annotations)
         seat_ids = {s['id'] for s in clean_seats}
 
         with self.lock:
@@ -209,6 +270,8 @@ class SeatStore:
                     raise ValidationError('着席中の座席は削除できません')
             self._state['tables'] = clean_tables
             self._state['seats'] = clean_seats
+            if clean_annotations is not None:
+                self._state['annotations'] = clean_annotations
             self._save()
             return self.snapshot()
 
@@ -258,6 +321,38 @@ class SeatStore:
             self._state['assignments'].append(entry)
             self._save()
             return {'assignment': entry, 'seat': seat, 'state': self.snapshot()}
+
+    def check_in_all(self, choose: ChooseFunc) -> Dict:
+        """
+        参加者リストのうちまだ着席していない全員を、空席からまとめて割り当てる
+
+        空席が足りないとき・対象者がいないときは、何も変更せずエラーにする。
+        """
+        with self.lock:
+            seated = {a['name'] for a in self._state['assignments']}
+            names = [n for n in self._state['participants'] if n not in seated]
+            if not names:
+                raise ValidationError('未着席の参加者がいません。参加者リストに名前を入力してください')
+
+            taken = {a['seat_id'] for a in self._state['assignments']}
+            free = [s for s in self._state['seats'] if s['id'] not in taken]
+            if len(names) > len(free):
+                raise ValidationError(
+                    f'空席が足りません（未着席 {len(names)} 名 / 空席 {len(free)} 席）')
+
+            seated_at = datetime.now().isoformat(timespec='seconds')
+            entries = []
+            for name in names:
+                index = choose(len(free))
+                if not 0 <= index < len(free):
+                    raise RuntimeError('乱数が範囲外です')
+                seat = free.pop(index)
+                entries.append({'name': name, 'seat_id': seat['id'], 'seated_at': seated_at})
+
+            # 全員分の抽選が成功してから反映する（途中失敗時は元の状態を保つ）
+            self._state['assignments'].extend(entries)
+            self._save()
+            return {'assignments': entries, 'state': self.snapshot()}
 
     def check_out(self, seat_id) -> Dict:
         """指定した席の着席を取り消す"""

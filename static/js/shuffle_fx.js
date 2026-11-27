@@ -6,6 +6,8 @@
  *   3. 観測: 玉が1つずつ新しい席へ飛び込み、波紋と光の粒が広がる
  *   4. 完了: 花火と紙吹雪
  *
+ * 一括配置では、まだ席のない人が会場の外から現れて同じ流れで席に着く（fromSeatId が null）。
+ *
  * 席はサーバー側で乱数プールから決定済みで、これは結果を見せるための視覚効果のみ。
  * seat_layout.js の drawVenue / SEAT_RADIUS / QUANTUM_RGB に依存する。
  */
@@ -58,11 +60,16 @@
     /**
      * @param {HTMLCanvasElement} canvas  オーバーレイのキャンバス（1600x1200）
      * @param {{tables: Array, seats: Array}} layout
-     * @param {Array<{name: string, fromSeatId: number, toSeatId: number}>} moves
+     * @param {Array<{name: string, fromSeatId: number|null, toSeatId: number}>} moves
+     *   fromSeatId が null の人は会場の外から飛んでくる
      * @param {{
      *   overlay: HTMLElement, finalSub: string,
      *   setTitle: (text: string) => void, setSub: (text: string) => void,
-     *   onProgress: (fraction: number) => void
+     *   onProgress: (fraction: number) => void,
+     *   fixedNames?: Map<number, string>,     // 動かない着席済みの人（席ID -> 名前）。最初から席に表示する
+     *   candidateSeatIds?: Set<number>,       // 候補になる席（省略時は全席）
+     *   startSub?: string,                    // 最初の段階の説明文
+     *   doneTitle?: string                    // 完了時の見出し
      * }} opts
      * @returns {Promise<void>} 演出が終わる（またはクリックでスキップされる）と解決する
      */
@@ -72,6 +79,10 @@
             const seatById = new Map(layout.seats.map(s => [s.id, s]));
             const n = moves.length;
             const seed = Math.random() * 1000;
+            const candidates = opts.candidateSeatIds
+                ? layout.seats.filter(s => opts.candidateSeatIds.has(s.id))
+                : layout.seats;
+            const fixedNames = opts.fixedNames || new Map();
 
             // 着地の順番は毎回ばらばら
             const order = moves.map((_, i) => i).sort((a, b) => hash(a, seed) - hash(b, seed));
@@ -83,7 +94,13 @@
             const flashAt = swirlEnd + GAP_MS - 250;
             const guests = moves.map((m, i) => ({
                 name: m.name,
-                from: seatById.get(m.fromSeatId),
+                // 席のない人は会場の外の輪から現れる
+                from: m.fromSeatId == null
+                    ? {
+                        x: CX + Math.cos(hash(i, seed + 7) * Math.PI * 2) * 520,
+                        y: CY + Math.sin(hash(i, seed + 7) * Math.PI * 2) * 420
+                    }
+                    : seatById.get(m.fromSeatId),
                 to: seatById.get(m.toSeatId),
                 color: COLORS[i % COLORS.length],
                 angle0: hash(i, seed + 1) * Math.PI * 2,
@@ -94,7 +111,7 @@
             }));
             const landEnd = swirlEnd + GAP_MS + (n - 1) * stagger + FLIGHT_MS;
             const total = landEnd + FINALE_MS;
-            const permText = permutationText(layout.seats.length, n);
+            const permText = permutationText(candidates.length, n);
 
             function orbitPos(g, i, t) {
                 const a = g.angle0 + g.dir * angleAt(t);
@@ -205,7 +222,7 @@
                         ctx.stroke();
                     }
                     // 候補の席へ走る干渉の線
-                    const seat = layout.seats[Math.floor(hash(i + bucket * 13, seed) * layout.seats.length)];
+                    const seat = candidates[Math.floor(hash(i + bucket * 13, seed) * candidates.length)];
                     if (a && seat) {
                         ctx.strokeStyle = `rgba(138, 63, 252, ${fade * 0.35})`;
                         ctx.beginPath();
@@ -219,7 +236,7 @@
                 ctx.shadowColor = QUANTUM_COLOR;
                 ctx.shadowBlur = 16;
                 for (let k = 0; k < 6; k++) {
-                    const seat = layout.seats[Math.floor(hash(bucket, k + seed) * layout.seats.length)];
+                    const seat = candidates[Math.floor(hash(bucket, k + seed) * candidates.length)];
                     if (!seat) continue;
                     ctx.strokeStyle = `rgba(${QUANTUM_RGB}, ${fade * 0.9})`;
                     ctx.beginPath();
@@ -342,9 +359,12 @@
                         '全員を量子の重ね合わせ状態へ',
                         '量子もつれ ─ 配置をシャッフル中',
                         '観測！ 配置が確定していきます',
-                        '配置換え完了！'
+                        opts.doneTitle || '配置換え完了！'
                     ][phase]);
-                    if (phase === 0) opts.setSub(`${n}名の席をいったん白紙に戻し、空席を含む全${layout.seats.length}席を候補にします`);
+                    if (phase === 0) {
+                        opts.setSub(opts.startSub ||
+                            `${n}名の席をいったん白紙に戻し、空席を含む全${layout.seats.length}席を候補にします`);
+                    }
                     if (phase === 1) opts.setSub(`|Ψ⟩ = Σ|配置⟩　… ${permText}が同時に存在`);
                     if (phase === 3) opts.setSub(opts.finalSub);
                 }
@@ -380,8 +400,8 @@
                 updateText(t);
                 opts.onProgress(clamp(t / landEnd, 0, 1));
 
-                // 着地済みの人だけ席に名前が表示される（それまでは全席が空席＝重ね合わせ）
-                const names = new Map();
+                // 着地済みの人だけ席に名前が表示される（それまでは候補の席が空席＝重ね合わせ）
+                const names = new Map(fixedNames);
                 guests.forEach(g => {
                     if (t >= g.launch + FLIGHT_MS) names.set(g.to.id, g.name);
                 });

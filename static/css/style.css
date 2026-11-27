@@ -223,6 +223,11 @@ a.header-title {
   opacity: 0.8;
 }
 
+/* 受付カード内の「全員を受付」ボタン */
+.checkin-all {
+  margin-top: 12px;
+}
+
 /* 大きいボタンでは2行目に表示 */
 .btn-large .btn-bits {
   display: block;

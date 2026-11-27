@@ -5,7 +5,7 @@
     'use strict';
 
     // サーバーが保持する状態のクライアント側コピー
-    const state = { tables: [], seats: [], assignments: [], participants: [] };
+    const state = { tables: [], seats: [], annotations: [], assignments: [], participants: [] };
 
     let lastSeatId = null;   // 直近に決まった席（強調表示用）
     let busy = false;        // 量子乱数の取得中
@@ -27,7 +27,10 @@
         rect: 'ドラッグして四角形のテーブルを描きます（Shiftで正方形）',
         ellipse: 'ドラッグして丸いテーブルを描きます（Shiftで正円）',
         polygon: '頂点を順にクリック。始点（赤い点）をクリックかEnterで確定します',
-        seat: '席を置きたい場所をクリックします'
+        seat: '席を置きたい場所をクリックします',
+        text: '文字を書きたい場所をクリックして入力します（書き換えは「選択・移動」でダブルクリック）',
+        arrow: 'ドラッグして矢印を描きます（Shiftで45度刻み）。選択すると両端をドラッグして変形できます',
+        line: 'ドラッグして線を描きます（Shiftで45度刻み）。選択すると両端をドラッグして変形できます'
     };
 
     // ---- API ----
@@ -65,6 +68,7 @@
     function applyState(newState) {
         state.tables = newState.tables;
         state.seats = newState.seats;
+        state.annotations = newState.annotations || [];
         state.assignments = newState.assignments;
         state.participants = newState.participants || [];
     }
@@ -90,7 +94,7 @@
 
     function setBusy(value, text) {
         busy = value;
-        ['checkin-btn', 'guest-name', 'reshuffle-btn', 'reset-btn'].forEach(id => {
+        ['checkin-btn', 'checkin-all-btn', 'guest-name', 'reshuffle-btn', 'reset-btn'].forEach(id => {
             $(id).disabled = value;
         });
         document.querySelectorAll('.cancel-btn').forEach(btn => {
@@ -152,6 +156,31 @@
         let total = 0;
         for (let i = 0; i < guests; i++) total += expectedBits(seats - i);
         $('reshuffle-bits').textContent = `（約${Math.round(total)}ビット消費）`;
+
+        // 一括配置: 未着席の人を1人ずつ、そのとき残っている空席から選ぶ
+        const pending = pendingParticipants().length;
+        let bulk = 0;
+        for (let i = 0; i < pending; i++) bulk += expectedBits(seats - guests - i);
+        $('checkin-all-bits').textContent = pending === 0
+            ? '（参加者リストに未着席の人がいません）'
+            : `（未着席${pending}名・約${Math.round(bulk)}ビット消費）`;
+        $('checkin-all-btn').disabled = busy || pending === 0;
+    }
+
+    // 参加者リスト欄の内容（1行1名・前後の空白と空行と重複を除く。サーバー側の整形と同じ）
+    function parseParticipantLines() {
+        const names = [];
+        $('participants-text').value.split(/\r?\n/).forEach(line => {
+            const name = line.trim();
+            if (name && !names.includes(name)) names.push(name);
+        });
+        return names;
+    }
+
+    // 参加者リスト欄のうち、まだ着席していない人
+    function pendingParticipants() {
+        const seated = new Set(state.assignments.map(a => a.name));
+        return parseParticipantLines().filter(n => !seated.has(n));
     }
 
     // ---- 描画 ----
@@ -476,12 +505,26 @@
      * 席はサーバー側で決定済みで、これは結果を見せるための視覚効果のみ。
      */
     async function playReshuffleAnimation(before, after, data, from) {
-        if (prefersReducedMotion() || typeof window.playShuffleFx !== 'function') return;
-
         const newSeatByName = new Map(after.map(a => [a.name, a.seat_id]));
         const moves = before
             .filter(b => newSeatByName.has(b.name))
             .map(b => ({ name: b.name, fromSeatId: b.seat_id, toSeatId: newSeatByName.get(b.name) }));
+        await playShuffleOverlay(moves, data, from, {});
+    }
+
+    /** 一括配置の演出。席のない人が会場の外から現れ、すでに着席している人はその場に残る */
+    async function playBulkAnimation(moves, data, from, fixedNames, candidateSeatIds) {
+        await playShuffleOverlay(moves, data, from, {
+            fixedNames,
+            candidateSeatIds,
+            startSub: `未着席の${moves.length}名を、空席${candidateSeatIds.size}席の中から量子乱数で配置します`,
+            doneTitle: '一括配置完了！'
+        });
+    }
+
+    // 全画面の演出を再生する。state はまだ変更前の状態であること
+    async function playShuffleOverlay(moves, data, from, extra) {
+        if (prefersReducedMotion() || typeof window.playShuffleFx !== 'function') return;
         if (moves.length === 0) return;
 
         const overlay = $('shuffle-overlay');
@@ -492,6 +535,7 @@
         document.body.style.overflow = 'hidden';
         try {
             await window.playShuffleFx($('shuffle-canvas'), state, moves, {
+                ...extra,
                 overlay,
                 finalSub: data.method === 'quantum' && data.bits_used > 0
                     ? `量子乱数 ${data.bits_used} ビットを消費しました` : '',
@@ -534,6 +578,62 @@
             showNotice(warning
                 ? `配置換えが完了しました。${warning}`
                 : `配置換えが完了しました（${methodLabel(data.method, data.backend)}${bits}）`,
+            warning ? 'error' : 'ok');
+        } catch (error) {
+            showNotice(error.message, 'error');
+        } finally {
+            setBusy(false);
+            render();
+            fetchBackendInfo();
+        }
+    }
+
+    // 参加者リストの未着席の人を、量子乱数で一括して席に着ける
+    async function checkInAll() {
+        if (busy) return;
+        const names = parseParticipantLines();
+        const pending = pendingParticipants();
+        const freeCount = state.seats.length - state.assignments.length;
+        if (pending.length === 0) {
+            showNotice('未着席の参加者がいません。参加者リストに名前を入力してください', 'error');
+            return;
+        }
+        if (pending.length > freeCount) {
+            showNotice(`空席が足りません（未着席 ${pending.length} 名 / 空席 ${freeCount} 席）`, 'error');
+            return;
+        }
+        if (!confirm(`参加者リストの未着席 ${pending.length} 名を、空席 ${freeCount} 席に量子乱数で一括配置します。よろしいですか？`)) return;
+
+        clearNotice();
+        $('result-card').style.display = 'none';
+        setBusy(true, '一括配置中...');
+
+        try {
+            // 入力欄の内容がまだ保存されていなければ、先に参加者リストとして保存する
+            if (names.join('\n') !== state.participants.join('\n')) {
+                const saved = await api('PUT', '/api/participants', { names });
+                applyState(saved.state);
+            }
+            const fixedNames = seatNames();
+            const candidateSeatIds = new Set(
+                state.seats.filter(s => !fixedNames.has(s.id)).map(s => s.id));
+            const from = poolStatus ? poolStatus.remaining_bits : null;
+
+            const data = await api('POST', '/api/checkin-all', {}, DRAW_TIMEOUT_MS);
+            $('loading').style.display = 'none';
+            const moves = data.assignments.map(a => ({ name: a.name, fromSeatId: null, toSeatId: a.seat_id }));
+            await playBulkAnimation(moves, data, from, fixedNames, candidateSeatIds);
+            if (data.pool) {
+                poolStatus = data.pool;
+                setRemaining(data.pool.remaining_bits);
+            }
+            applyState(data.state);
+            lastSeatId = null;
+            const warning = fallbackWarning(data.method);
+            const bits = data.method === 'quantum' && data.bits_used > 0 ? `・${data.bits_used}ビット消費` : '';
+            showNotice(warning
+                ? `${data.assignments.length}名を一括配置しました。${warning}`
+                : `${data.assignments.length}名を一括配置しました（${methodLabel(data.method, data.backend)}${bits}）`,
             warning ? 'error' : 'ok');
         } catch (error) {
             showNotice(error.message, 'error');
@@ -596,7 +696,9 @@
         // 保存リクエストを直列化して順序を保証する
         saveChain = saveChain.then(async () => {
             try {
-                await api('PUT', '/api/layout', { tables: state.tables, seats: state.seats });
+                await api('PUT', '/api/layout', {
+                    tables: state.tables, seats: state.seats, annotations: state.annotations
+                });
                 setLayoutStatus('保存済み', false);
             } catch (error) {
                 setLayoutStatus(`保存に失敗しました: ${error.message}`, true);
@@ -624,7 +726,8 @@
             redraw: render,
             onSelectionChange: () => {
                 setLayoutStatus('', false);
-            }
+            },
+            onMessage: message => setLayoutStatus(message, true)
         });
 
         document.querySelectorAll('[data-tool]').forEach(button => {
@@ -672,15 +775,16 @@
     }
 
     function clearLayout() {
-        if (state.tables.length === 0 && state.seats.length === 0) return;
+        if (state.tables.length === 0 && state.seats.length === 0 && state.annotations.length === 0) return;
         if (state.assignments.length > 0) {
             setLayoutStatus('着席中の方がいるため全消去できません。先に全体リセットしてください', true);
             return;
         }
-        if (!confirm('すべての机と席を削除しますか？')) return;
+        if (!confirm('すべての机・席・書き込みを削除しますか？')) return;
 
         state.tables = [];
         state.seats = [];
+        state.annotations = [];
         editor.clearSelection();
         render();
         saveLayout();
@@ -761,6 +865,8 @@
 
         $('checkin-form').addEventListener('submit', checkIn);
         $('reshuffle-btn').addEventListener('click', reshuffle);
+        $('checkin-all-btn').addEventListener('click', checkInAll);
+        $('participants-text').addEventListener('input', updateBitLabels);
         $('reset-btn').addEventListener('click', resetAll);
         $('export-btn').addEventListener('click', exportCsv);
         $('participants-save').addEventListener('click', () =>
